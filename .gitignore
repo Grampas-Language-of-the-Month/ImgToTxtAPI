@@ -1,0 +1,54 @@
+.env
+
+# Build artifacts
+bin/
+obj/
+**/bin/
+**/obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.vcxproj.user
+*.csproj.user
+*.nuproj.user
+*.dbmdl
+*.log
+*.tlog
+*.pdb
+
+# Resharper/Rider
+_ReSharper*/
+*.ReSharper.user
+.idea/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+**/packages/*
+*.nuget.props
+*.nuget.targets
+project.assets.json
+project.lock.json
+
+# ASP.NET Core
+appsettings.*.json
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+appsettings.Local.json
+
+# Dotnet tools
+.dotnet/
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*.bak
+*.orig
