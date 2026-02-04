@@ -1,5 +1,4 @@
-using System;
-using System.IO;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,26 +23,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-// app.UseAntiforgery();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+// THIS IS FOR PROD
+app.UseAntiforgery();
 
 app.MapPost("/process-image", async (IFormFile image, string prompt = "") =>
 {
@@ -53,26 +35,64 @@ app.MapPost("/process-image", async (IFormFile image, string prompt = "") =>
     if (image.Length > 10 * 1024 * 1024) // 10MB limit
         return Results.BadRequest("Image too large");
 
-    // Validate MIME type
-    if (!image.ContentType.StartsWith("image/"))
-        return Results.BadRequest("Invalid image format");
+    // Check image format to be compatable with the LLM
+    if (!new[] { "image/png", "image/jpeg", "image/jpg" }.Contains(image.ContentType))
+        return Results.BadRequest("Invalid image format. Only PNG and JPEG are supported.");
 
-    // Process image (e.g., save to temp, run ML model, etc.)
+    // Process image
     using var stream = image.OpenReadStream();
-    // Your image logic here...
-    HttpClient client = new();
-    // HttpContent content = new 
-    client.BaseAddress = new Uri("https://router.huggingface.co/hf-inference/models/google/vit-base-patch16-224");
+    using var memoryStream = new MemoryStream();
+    await stream.CopyToAsync(memoryStream);
+    var imageBytes = memoryStream.ToArray();
+    var base64Image = Convert.ToBase64String(imageBytes);
+    var dataUrl = $"data:{image.ContentType};base64,{base64Image}";
+
+
+    using var client = new HttpClient
+    {
+        BaseAddress = new Uri("https://router.huggingface.co/v1/chat/completions")
+    };
     client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
 
-    return Results.Ok(new { result = $"{apiKey}!" });
+    var requestBody = new
+    {
+        messages = new[]
+        {
+            new
+            {
+                role = "user",
+                content = new object[]
+                {
+                    new { type = "text", text = prompt },
+                    new { type = "image_url", image_url = new { url = dataUrl } }
+                }
+            }
+        },
+        model = "moonshotai/Kimi-K2.5:fireworks-ai",
+        stream = false
+    };
+
+    var jsonContent = new StringContent(
+        System.Text.Json.JsonSerializer.Serialize(requestBody),
+        System.Text.Encoding.UTF8,
+        "application/json"
+    );
+
+    var response = await client.PostAsync("", jsonContent);
+    var responseBody = await response.Content.ReadAsStringAsync();
+
+    using var doc = JsonDocument.Parse(responseBody);
+    var messageContent = doc.RootElement
+        .GetProperty("choices")[0]
+        .GetProperty("message")
+        .GetProperty("content")
+        .GetString();
+
+
+    return Results.Ok(new { description = messageContent });
 })
 .DisableAntiforgery()
 .WithName("POSTimage");
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
