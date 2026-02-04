@@ -2,11 +2,26 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+// // Configure Docker
+// builder.WebHost.ConfigureKestrel(options =>
+// {
+//     options.ListenAnyIP(8080); // Docker standard port
+// });
+
 builder.Services.AddOpenApi();
 builder.Services.AddAntiforgery();
 builder.Configuration.AddEnvironmentVariables();
+
+// Add CORS for web use
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowWeb", policy =>
+    {
+        policy.WithOrigins(builder.Configuration["AllowedOrigins"] ?? "*")
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
 var app = builder.Build();
 
@@ -16,15 +31,13 @@ if (string.IsNullOrWhiteSpace(apiKey))
     throw new InvalidOperationException("Missing HuggingFace:ApiKey environment variable.");
 }
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
-
-// THIS IS FOR PROD
+app.UseCors("AllowWeb");
+app.UseHttpsRedirection(); // Disable for Docker
 app.UseAntiforgery();
 
 app.MapPost("/process-image", async (IFormFile image, string prompt = "") =>
@@ -46,7 +59,6 @@ app.MapPost("/process-image", async (IFormFile image, string prompt = "") =>
     var imageBytes = memoryStream.ToArray();
     var base64Image = Convert.ToBase64String(imageBytes);
     var dataUrl = $"data:{image.ContentType};base64,{base64Image}";
-
 
     using var client = new HttpClient
     {
@@ -73,23 +85,30 @@ app.MapPost("/process-image", async (IFormFile image, string prompt = "") =>
     };
 
     var jsonContent = new StringContent(
-        System.Text.Json.JsonSerializer.Serialize(requestBody),
+        JsonSerializer.Serialize(requestBody),
         System.Text.Encoding.UTF8,
         "application/json"
     );
 
-    var response = await client.PostAsync("", jsonContent);
-    var responseBody = await response.Content.ReadAsStringAsync();
+    try
+    {
+        var response = await client.PostAsync("", jsonContent);
+        response.EnsureSuccessStatusCode();
+        var responseBody = await response.Content.ReadAsStringAsync();
 
-    using var doc = JsonDocument.Parse(responseBody);
-    var messageContent = doc.RootElement
-        .GetProperty("choices")[0]
-        .GetProperty("message")
-        .GetProperty("content")
-        .GetString();
+        using var doc = JsonDocument.Parse(responseBody);
+        var messageContent = doc.RootElement
+            .GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
 
-
-    return Results.Ok(new { description = messageContent });
+        return Results.Ok(new { description = messageContent });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem($"Error processing image: {ex.Message}");
+    }
 })
 .DisableAntiforgery()
 .WithName("POSTimage");
