@@ -41,9 +41,9 @@ appsettings.Development.json
 appsettings.Production.json
 appsettings.Staging.json
 appsettings.Local.json
-Properties/
-obj/
-bin/
+Properties/*
+obj/*
+bin/*
 
 # Dotnet tools
 .dotnet/
