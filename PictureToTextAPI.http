@@ -1,0 +1,6 @@
+@PictureToTextAPI_HostAddress = http://localhost:5086
+
+GET {{PictureToTextAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
